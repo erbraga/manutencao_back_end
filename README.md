@@ -45,6 +45,33 @@ Após a criação e ativação do ambiente virtual a aplicação pode ser execut
 
 <br>
 
+## Como executar com Docker
+
+Alternativa ao passo a passo acima: com o [Docker](https://docs.docker.com/engine/install/) instalado, não é necessário criar ambiente virtual nem instalar dependências manualmente.
+
+1. Na raiz do projeto, construir a imagem:
+    ```
+    docker build -t manutencao-api .
+    ```
+
+2. Rodar o container, mapeando a porta 5000 e montando um volume para persistir o banco de dados SQLite entre execuções:
+    ```
+    docker run -d --name manutencao-api -p 5000:5000 -v "$(pwd)/instance:/app/instance" manutencao-api
+    ```
+
+    No Windows (PowerShell), substituir `$(pwd)` por `${PWD}`.
+
+3. A API estará disponível em `http://127.0.0.1:5000`, com o Swagger em `http://127.0.0.1:5000/apidocs/`, da mesma forma que na execução local.
+
+4. Para parar o container:
+    ```
+    docker stop manutencao-api
+    ```
+
+**Atenção:** se o container for removido (`docker rm`) sem o volume `-v` montado como acima, os dados gravados no SQLite são perdidos junto com o container.
+
+<br>
+
 ## Como utilizar
 
 A APi pode ser consumida por meio de requisições HTML para as rotas definidas.

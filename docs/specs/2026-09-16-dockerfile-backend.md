@@ -55,9 +55,14 @@ vez de `app.run(debug=True)`, atendendo o Requisito 3.
 - Arquivos alterados:
   - `requirements.txt` — adicionar `gunicorn` como dependência de
     produção.
+  - `README.md` — nova seção com os comandos de `docker build` e
+    `docker run` (incluindo o volume para persistir `instance/`),
+    para o avaliador subir o backend sem precisar montar o ambiente
+    Python local.
 - Fluxo principal (build e execução):
-  1. `Dockerfile` usa uma imagem base `python:3.12-slim` (alinhada à
-     versão local, 3.12.3).
+  1. `Dockerfile` usa a imagem base `python:3.12-slim` (alinhada à
+     versão local, 3.12.3; sem fixar patch version para receber
+     atualizações de segurança da imagem).
   2. Copia `requirements.txt` primeiro e roda `pip install` (para
      aproveitar cache de camada do Docker antes de copiar o resto do
      código).
@@ -80,18 +85,18 @@ vez de `app.run(debug=True)`, atendendo o Requisito 3.
     no README (fora do escopo desta spec, mas relevante como aviso).
 
 ## Decisões em aberto
-1. **Versão exata da imagem base**: usar `python:3.12-slim` (mais
-   próxima da versão local 3.12.3) ou fixar `python:3.12.3-slim`?
-2. **Nome/porta do CMD gunicorn**: manter porta 5000 (padrão Flask) ou
-   usar 8000 (mais comum em imagens gunicorn)? Isso também afeta o que
-   o frontend/SPA espera ao consumir a API.
-3. **Onde documentar o comando de build/run** (`docker build`,
-   `docker run -v ...`): já incluir no README neste momento, ou tratar
-   como tarefa separada do plano desta mesma feature?
-4. Confirmar se `gunicorn` pode ser adicionado a `requirements.txt`
-   diretamente ou se deve ficar num `requirements-prod.txt` separado
-   do ambiente de desenvolvimento local (o projeto hoje só tem um
-   único `requirements.txt`).
+1. ~~Versão exata da imagem base~~ — **Resolvido:** `python:3.12-slim`.
+2. ~~Porta do CMD gunicorn~~ — **Resolvido:** manter 5000 (padrão
+   Flask, já documentado no README e usado pelo frontend). Se a porta
+   5000 do host do avaliador estiver ocupada, isso se resolve no
+   mapeamento do `docker run` (`-p <porta-livre>:5000`), sem alterar
+   o container nem o frontend.
+3. ~~Onde documentar o comando de build/run~~ — **Resolvido:** incluir
+   no README já nesta mesma tarefa (`docker build`, `docker run -v ...`).
+4. ~~`gunicorn` em `requirements.txt` único vs. `requirements-prod.txt`
+   separado~~ — **Resolvido:** manter um único `requirements.txt`,
+   consistente com a simplicidade já adotada no projeto (sem split de
+   configuração dev/prod) e sem exigir passos extras do avaliador.
 
 ## Critérios de aceite
 - Existe um `Dockerfile` na raiz do projeto que builda com sucesso
@@ -110,3 +115,60 @@ vez de `app.run(debug=True)`, atendendo o Requisito 3.
 ---
 *Depois de aprovada, esta spec vira a base do PLANO — não escrever
 código antes disso.*
+
+## Plano de Implementação
+
+1. **Adicionar `gunicorn` a `requirements.txt`**
+   - Arquivo(s): `requirements.txt`
+   - Mudança: acrescentar a linha `gunicorn==<versão fixada>` (última
+     estável compatível com Flask 3.1.2/Python 3.12).
+   - Validar: `pip install -r requirements.txt` num venv local não gera
+     erro; `python -c "import gunicorn"` funciona.
+
+2. **Criar `.dockerignore`**
+   - Arquivo(s): `.dockerignore` (novo, raiz do projeto)
+   - Mudança: excluir `.venv/`, `__pycache__/`, `instance/`, `*.db`,
+     `.git`, `docs/` do contexto de build.
+   - Validar: `docker build .` (após a tarefa 3) não copia esses
+     caminhos para dentro da imagem — checar com
+     `docker run --rm <imagem> ls -la` que `.venv`/`instance` não
+     aparecem.
+
+3. **Criar o `Dockerfile`**
+   - Arquivo(s): `Dockerfile` (novo, raiz do projeto)
+   - Mudança: imagem base `python:3.12-slim`; copia `requirements.txt`
+     e instala dependências antes de copiar o restante do código
+     (cache de camada); expõe a porta 5000; `CMD` sobe a aplicação via
+     `gunicorn --bind 0.0.0.0:5000 app:app`.
+   - Validar: `docker build -t manutencao-api .` completa sem erro.
+
+4. **Validar build e execução local do container**
+   - Arquivo(s): nenhum (apenas execução/verificação)
+   - Mudança: nenhuma mudança de código — é o checkpoint de validação
+     da imagem gerada nas tarefas 1–3.
+   - Validar:
+     `docker run --rm -p 5000:5000 -v "$(pwd)/instance:/app/instance" manutencao-api`
+     e então `curl http://127.0.0.1:5000/recuperar` retorna 200, e
+     `http://127.0.0.1:5000/apidocs/` carrega a UI do Swagger.
+
+5. **Validar persistência do SQLite via volume**
+   - Arquivo(s): nenhum (apenas execução/verificação)
+   - Mudança: nenhuma — checkpoint de validação do critério de aceite
+     de persistência.
+   - Validar: com o container da tarefa 4 rodando, criar um veículo via
+     `POST /salvar-veiculo`; parar o container (`docker stop`); rodar
+     de novo com o mesmo volume montado; `GET /recuperar` deve
+     continuar retornando o veículo criado.
+
+6. **Documentar Docker no README**
+   - Arquivo(s): `README.md`
+   - Mudança: nova seção "Como executar com Docker" com os comandos de
+     `docker build` e `docker run` (incluindo o `-v` para persistir
+     `instance/`), como alternativa ao setup manual com venv já
+     documentado.
+   - Validar: seguir os comandos exatamente como escritos no README, do
+     zero (sem venv ativado), e confirmar que a API sobe e responde —
+     esse é o teste que simula o avaliador.
+
+Nenhuma tarefa altera models, então não há migration a gerar nesta
+feature.

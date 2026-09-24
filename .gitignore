@@ -1,2 +1,6 @@
 __pycache__/
 .venv
+.claude
+.docs/specs
+CLAUDE.md
+"requisitos back-end.md"
